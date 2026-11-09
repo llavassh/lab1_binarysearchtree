@@ -15,8 +15,6 @@ public:
     DynamicArray(): data(nullptr), size(0), capacity(0) {}
 
     explicit DynamicArray(size_t size): size(size), capacity(size) {
-        if (size < 0) 
-            throw std::invalid_argument("Negative size");
         data = (size > 0) ? new T[size] : nullptr; 
     }
 
@@ -73,7 +71,7 @@ public:
     }
 
     void Set(size_t index, const T &value) {
-        if (index < 0 || index >= size)
+        if (index >= size)
             throw IndexOutOfRange(index, size);
 
         data[index] = value;
@@ -124,7 +122,7 @@ public:
     }
 
     const T &operator[](size_t index) const {
-        if (index < 0 || index >= size) throw IndexOutOfRange(index, size);
+        if (index >= size) throw IndexOutOfRange(index, size);
         return data[index];
     }
 

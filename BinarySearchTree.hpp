@@ -1,6 +1,10 @@
+#ifndef BINARYSEARCHTREE_HPP
+#define BINARYSEARCHTREE_HPP 
+
 #include <memory>
 #include <cstddef>
 #include <string>
+#include <sstream>
 #include <stdexcept>
 #include <utility>
 
@@ -14,11 +18,19 @@ private:
         std::unique_ptr<Node> left;
         std::unique_ptr<Node> right;
 
+        Node *threadNext = nullptr;
+
         Node(const T& value) : data(value), left(nullptr), right(nullptr) {}
     };
 
     std::unique_ptr<Node> root;
     size_t size = 0;
+
+    Node *threadHead = nullptr;
+    struct ThreadContext {
+        Node* prev = nullptr;
+        Node* head = nullptr;
+    };
 
     int Compare(const T& a, const T& b) const {
         if (a < b) {
@@ -31,93 +43,146 @@ private:
     }
 
     template <typename Action, typename Context>
-    void TraverseKLP(Node* node, Action action, Context& context) {
+    void TraverseKLR(Node* node, Action action, Context& context) {
         if (node == nullptr) {
             return;
         }
-        action(node->data, context);
-        TraverseKLP(node->left.get(), action, context);
-        TraverseKLP(node->right.get(), action, context);
+        action(node, context);
+        TraverseKLR(node->left.get(), action, context);
+        TraverseKLR(node->right.get(), action, context);
     }
 
     template <typename Action, typename Context>
-    void TraverseKPL(Node* node, Action action, Context& context) {
+    void TraverseKRL(Node* node, Action action, Context& context) {
         if (node == nullptr) {
             return;
         }
-        action(node->data, context);
-        TraverseKPL(node->right.get(), action, context);
-        TraverseKPL(node->left.get(), action, context);
+        action(node, context);
+        TraverseKRL(node->right.get(), action, context);
+        TraverseKRL(node->left.get(), action, context);
     }
 
     template <typename Action, typename Context>
-    void TraverseLKP(Node* node, Action action, Context& context) {
+    void TraverseLKR(Node* node, Action action, Context& context) {
         if (node == nullptr) {
             return;
         }
-        TraverseLKP(node->left.get(), action, context);
-        action(node->data, context);
-        TraverseLKP(node->right.get(), action, context);
+        TraverseLKR(node->left.get(), action, context);
+        action(node, context);
+        TraverseLKR(node->right.get(), action, context);
     }
 
     template <typename Action, typename Context>
-    void TraversePKL(Node* node, Action action, Context& context) {
+    void TraverseRKL(Node* node, Action action, Context& context) {
         if (node == nullptr) {
             return;
         }
-        TraversePKL(node->right.get(), action, context);
-        action(node->data, context);
-        TraversePKL(node->left.get(), action, context);
+        TraverseRKL(node->right.get(), action, context);
+        action(node, context);
+        TraverseRKL(node->left.get(), action, context);
     }
 
     template <typename Action, typename Context>
-    void TraverseLPK(Node* node, Action action, Context& context) {
+    void TraverseLRK(Node* node, Action action, Context& context) {
         if (node == nullptr) {
             return;
         }
-        TraverseLPK(node->left.get(), action, context);
-        TraverseLPK(node->right.get(), action, context);
-        action(node->data, context);
+        TraverseLRK(node->left.get(), action, context);
+        TraverseLRK(node->right.get(), action, context);
+        action(node, context);
     }
 
     template <typename Action, typename Context> 
-    void TraversePLK(Node* node, Action action, Context& context) {
+    void TraverseRLK(Node* node, Action action, Context& context) {
         if (node == nullptr) {
             return;
         }
-        TraversePLK(node->right.get(), action, context);
-        TraversePLK(node->left.get(), action, context);
-        action(node->data, context);
+        TraverseRLK(node->right.get(), action, context);
+        TraverseRLK(node->left.get(), action, context);
+        action(node, context);
     } 
 
-    static void AddToArray(const T& value, DynamicArray<T>& array) {
-        array.Add(value);
+    static void AddToArray(Node* node, DynamicArray<T>& array) {
+        array.Add(node->data);
+    }
+
+    static void AddToThread(Node* node, ThreadContext& context) {
+        node->threadNext = nullptr;
+
+        if (context.head == nullptr) {
+            context.head = node;
+        }
+        if (context.prev != nullptr) {
+            context.prev->threadNext = node;
+        }
+        
+        context.prev = node;
     }
 
     size_t Height(Node* node) {
         if (node == nullptr) {
             return 0;
         }
-
         size_t leftHeight = Height(node->left.get());
         size_t rightHeight = Height(node->right.get());
-
         return (leftHeight > rightHeight) ? (1 + leftHeight) : (1 + rightHeight);
     }
 
-    bool IsBalancedNode(Node* node) {
+    std::unique_ptr<Node> BuildBalancedTree(const DynamicArray<T>& array, size_t start, size_t end) {
+        if (start == end)
+            return nullptr;
+        size_t middle = start + (end - start) / 2;
+        std::unique_ptr<Node> node = std::make_unique<Node>(array.Get(middle));
+        node->left = BuildBalancedTree(array, start, middle);
+        node->right = BuildBalancedTree(array, middle + 1, end);
+        return node;
+    }
+
+    bool IsBalancedNode(Node *node) {
         if (node == nullptr) {
             return true;
         }
-
         size_t leftHeight = Height(node->left.get());
         size_t rightHeight = Height(node->right.get());
-
         if (leftHeight > rightHeight + 1 || rightHeight > leftHeight + 1) {
             return false;
         }
-
         return IsBalancedNode(node->left.get()) && IsBalancedNode(node->right.get());
+    }
+
+    std::string Serialize(Node* node, const std::string& format) {
+        if (node == nullptr) {
+            return "";
+        }
+        std::string result;
+        for (size_t i = 0; i < format.size(); i++) {
+            if (format[i] == 'K') {
+                std::ostringstream stream;
+                stream << node->data;
+                result += stream.str();
+            }
+            else if (format[i] == 'L') {
+                result += Serialize(node->left.get(), format);
+            }
+            else if (format[i] == 'R') {
+                result += Serialize(node->right.get(), format);
+            }
+            else {
+                result += format[i];
+            }
+        }
+        return result;
+    }
+
+    std::unique_ptr<Node> CopyNode(Node* node, size_t& size) {
+        if (node == nullptr) {
+            return nullptr;
+        }
+        std::unique_ptr<Node> copy = std::make_unique<Node>(node->data);
+        size++;
+        copy->left = CopyNode(node->left.get(), size);
+        copy->right = CopyNode(node->right.get(), size);
+        return copy;
     }
 
 public:
@@ -127,6 +192,7 @@ public:
         if (current == nullptr) {
             root = std::make_unique<Node>(item);
             size++;
+            threadHead = nullptr;
             return true;
         }
         while (current != nullptr) {
@@ -135,6 +201,7 @@ public:
                 if (current->left == nullptr) {
                     current->left = std::make_unique<Node>(item);
                     size++;
+                    threadHead = nullptr;
                     return true;
                 }
                 current = current->left.get();
@@ -143,6 +210,7 @@ public:
                 if (current->right == nullptr) {
                     current->right = std::make_unique<Node>(item);
                     size++;
+                    threadHead = nullptr;
                     return true;
                 }
                 current = current->right.get();
@@ -188,16 +256,19 @@ public:
                 if (current->left == nullptr && current->right == nullptr) {
                     link->reset();
                     size--;
+                    threadHead = nullptr;
                     return true;
                 }
                 else if (current->left != nullptr && current->right == nullptr) {
                     *link = std::move(current->left);
                     size--;
+                    threadHead = nullptr;
                     return true;
                 }
                 else if (current->left == nullptr && current->right != nullptr) {
                     *link = std::move(current->right);
                     size--;
+                    threadHead = nullptr;
                     return true;
                 }
                 else {
@@ -210,6 +281,7 @@ public:
                     (*link)->data = (*currentLink)->data;
                     *currentLink = std::move(current->right);
                     size--;
+                    threadHead = nullptr;
                     return true;
                 }
             }
@@ -227,23 +299,23 @@ public:
 
     template <typename Action, typename Context>
     void Traverse(const std::string& order, Action action, Context& context) {
-        if (order == "KLP") {
-            TraverseKLP(root.get(), action, context);
+        if (order == "KLR") {
+            TraverseKLR(root.get(), action, context);
         }
-        else if (order == "KPL") {
-            TraverseKPL(root.get(), action, context);
+        else if (order == "KRL") {
+            TraverseKRL(root.get(), action, context);
         }
-        else if (order == "LKP") {
-            TraverseLKP(root.get(), action, context);
+        else if (order == "LKR") {
+            TraverseLKR(root.get(), action, context);
         }
-        else if (order == "PKL") {
-            TraversePKL(root.get(), action, context);
+        else if (order == "RKL") {
+            TraverseRKL(root.get(), action, context);
         }
-        else if (order == "LPK") {
-            TraverseLPK(root.get(), action, context);
+        else if (order == "LRK") {
+            TraverseLRK(root.get(), action, context);
         }
-        else if (order == "PLK") {
-            TraversePLK(root.get(), action, context);
+        else if (order == "RLK") {
+            TraverseRLK(root.get(), action, context);
         }
         else {
             throw std::invalid_argument("Invalid traversal order");
@@ -253,7 +325,7 @@ public:
     BinarySearchTree<T> Where(bool (*predicate)(const T&)) {
         BinarySearchTree<T> result;
         DynamicArray<T> array;
-        Traverse("KLP", AddToArray, array);
+        Traverse("KLR", AddToArray, array);
         for (size_t i = 0; i < array.GetSize(); i++) {
             if (predicate(array.Get(i))) {
                 result.Insert(array.Get(i));
@@ -265,7 +337,7 @@ public:
     BinarySearchTree<T> Map(T (*func)(const T&)) {
         BinarySearchTree<T> result;
         DynamicArray<T> array;
-        Traverse("KLP", AddToArray, array);
+        Traverse("KLR", AddToArray, array);
         for (size_t i = 0; i < array.GetSize(); i++) {
             result.Insert(func(array.Get(i)));
         }
@@ -274,7 +346,7 @@ public:
 
     T Reduce(T initial, T (*func)(const T&, const T&)) {
         DynamicArray<T> array;
-        Traverse("KLP", AddToArray, array);
+        Traverse("KLR", AddToArray, array);
         for (size_t i = 0; i < array.GetSize(); i++) {
             initial = func(initial, array.Get(i));
         }
@@ -284,24 +356,60 @@ public:
     BinarySearchTree<T> Balance() {
         BinarySearchTree<T> result;
         DynamicArray<T> array;
-        Traverse("LKP", AddToArray, array);
-        if (array.GetSize() % 2 == 0) {
-            for (size_t i = 0; i < (array.GetSize()) / 2; i++) {
-                result.Insert(array.Get((GetSize() - 1) / 2 - i));
-                result.Insert(array.Get(GetSize() / 2 + i));
-            }
-        }
-        else {
-            result.Insert(array.Get((GetSize() - 1) / 2));
-            for (size_t i = 0; i < (array.GetSize() - 1) / 2; i++) {
-                result.Insert(array.Get((array.GetSize() - 1) / 2 - i - 1));
-                result.Insert(array.Get(GetSize() / 2 + i + 1));
-            }
-        }
+        Traverse("LKR", AddToArray, array);
+        result.root = BuildBalancedTree(array, 0, array.GetSize());
+        result.size = array.GetSize();;
         return result;
     }
 
     bool IsBalanced() {
         return IsBalancedNode(root.get());
     }
+
+    void Thread(const std::string& order) {
+        ThreadContext context;
+        Traverse(order, AddToThread, context);
+        threadHead = context.head;
+    }
+
+    template <typename Action, typename Context>
+    void TraverseThreaded(Action action, Context& context) {
+        Node *current = threadHead;
+        while (current != nullptr) {
+            action(current->data, context);
+            current = current->threadNext;
+        }
+    }
+
+    template <typename Action, typename Context>
+    void ThreadAndTraverse(const std::string& order, Action action, Context& context) {
+        Thread(order);
+        TraverseThreaded(action, context);
+    }
+
+    std::string ToString(const std::string& format) {
+        return Serialize(root.get(), format);
+    }
+
+    BinarySearchTree<T> CreateSubTree(const T& item) {
+        BinarySearchTree<T> result;
+        Node *current = root.get();
+        while (current != nullptr) {
+            int compare = Compare(current->data, item);
+            if (compare == 1) {
+                current = current->left.get();
+            }
+            else if (compare == -1) {
+                current = current->right.get();
+            }
+            else if (compare == 0) {
+                result.root = CopyNode(current, result.size);
+                return result;
+            }
+        }
+        return result;
+    }
+
 };
+
+#endif
